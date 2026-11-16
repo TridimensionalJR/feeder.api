@@ -1,4 +1,4 @@
-# AlimentadorAutomático (Automatic Pet Feeder API)
+# Automatic Pet Feeder API
 
 A production-ready Spring Boot backend for IoT-connected automatic pet feeders. The API provides user account management via Google OAuth 2.0, feeder hardware device pairing, highly configurable scheduling rules (interval-based or daily time-based), and an authenticated polling interface for embedded microcontrollers.
 
@@ -71,7 +71,7 @@ The application is structured following clean domain-driven architecture and 12-
 ## Project Structure
 
 ```text
-AlimentadorAutomatico/
+feeder.api/
 ├── .mvn/wrapper/                 # Maven wrapper binaries
 ├── src/
 │   ├── main/
@@ -468,8 +468,8 @@ Standard HTTP status mappings:
 #### Option A: Bare-metal with Maven (Default H2 Database)
 ```bash
 # Clone the repository
-git clone git@github.com:TridimensionalJR/AlimentadorAutomatico.git
-cd AlimentadorAutomatico
+git clone git@github.com:TridimensionalJR/feeder.api.git
+cd feeder.api
 
 # Run with dev profile (default)
 ./mvnw spring-boot:run
