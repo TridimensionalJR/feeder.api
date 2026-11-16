@@ -119,7 +119,7 @@ class JwtServiceTests {
 	private static AuthProperties properties(String secret, String issuer) {
 		return new AuthProperties(
 				new AuthProperties.Google("client-id"),
-				new AuthProperties.Jwt(secret, issuer, Duration.ofHours(1)),
+				new AuthProperties.Jwt(secret, issuer, Duration.ofHours(1), Duration.ofDays(30)),
 				new AuthProperties.Cors(List.of("http://localhost:5173")));
 	}
 

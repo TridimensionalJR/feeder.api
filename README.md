@@ -13,6 +13,7 @@ A production-ready Spring Boot backend for IoT-connected automatic pet feeders. 
 - [Environment Variables](#environment-variables)
 - [API Reference](#api-reference)
   - [Authentication](#authentication)
+  - [Token Lifecycle (Refresh Token Flow)](#token-lifecycle-refresh-token-flow)
   - [Feeders Management](#feeders-management)
   - [Feeding Schedules (Configs)](#feeding-schedules-configs)
   - [Hardware Device Interface](#hardware-device-interface)
@@ -33,7 +34,7 @@ A production-ready Spring Boot backend for IoT-connected automatic pet feeders. 
 The application is structured following clean domain-driven architecture and 12-factor application principles:
 
 - **Strict Tenant Isolation**: Endpoints never allow the caller to pass user IDs in query parameters, URL paths, or request payloads. The user identity is extracted securely from the verified application JWT claims (`sub` UUID). Any operation targeting a feeder or configuration belonging to another user returns an identical `404 Not Found` response to prevent ID enumeration.
-- **Stateless Authentication**: Frontend clients authenticate via Google Sign-In. The backend validates the Google ID token against Google's public JWKS keys (validating audience, issuer, and email verification) and exchanges it for an application-minted HMAC-SHA256 Bearer JWT.
+- **Stateless Authentication with Refresh Tokens**: Frontend clients authenticate via Google Sign-In. The backend validates the Google ID token against Google's public JWKS keys (validating audience, issuer, and email verification) and exchanges it for a short-lived application JWT (access token) paired with a long-lived opaque refresh token stored server-side. Tokens rotate on every refresh (RFC 6819) and re-use of a revoked token invalidates all sessions for that user immediately.
 - **Hardware-First Schedule Engine**: Scheduling rules support continuous frequency intervals (`INTERVAL`) or wall-clock schedules (`DAILY_TIME`) across specific days of the week, tied to the feeder's specific IANA timezone (defaulting to `America/Bahia`).
 - **Database Migrations as Single Source of Truth**: Flyway handles database versioning. Hibernate operates with `ddl-auto=validate` and `open-in-view=false` to ensure data integrity and avoid unintended N+1 queries outside transactions.
 
@@ -41,7 +42,7 @@ The application is structured following clean domain-driven architecture and 12-
 
 ## Key Features
 
-- **Google OAuth 2.0 Sign-In**: Validates tokens with Google JWKS and issues stateless HS256 application tokens.
+- **Google OAuth 2.0 Sign-In with Refresh Tokens**: Validates Google ID tokens and issues a short-lived HS256 JWT (access token, 1 h) plus a long-lived opaque refresh token (30 d, server-side). Tokens rotate on every use; replayed revoked tokens trigger full-session revocation.
 - **Feeder Management**: Pair physical hardware UUIDs, assign human-readable labels, adjust timezones, and toggle operational states.
 - **Flexible Feeding Scheduling**:
   - `INTERVAL`: Dispenses food every $N$ minutes ($1 \le N \le 10080$ minutes / 7 days).
@@ -83,7 +84,7 @@ AlimentadorAutomatico/
 │   │   │   ├── repository/      # Spring Data JPA repositories
 │   │   │   └── service/         # Business services and token verification
 │   │   └── resources/
-│   │       ├── db/migration/    # Flyway SQL migration scripts (V1, V2, V3)
+│   │       ├── db/migration/    # Flyway SQL migration scripts (V1–V4)
 │   │       ├── application.properties      # Shared baseline configuration
 │   │       ├── application-dev.properties  # Development profile configuration
 │   │       └── application-prod.properties # Production profile configuration
@@ -136,7 +137,26 @@ Authorization: Bearer <accessToken>
 
 ### Authentication
 
-#### 1. Exchange Google ID Token for Application JWT
+> [!NOTE]
+> The auth flow issues a **short-lived access token** (JWT, default 1 h) for API calls and a **long-lived refresh token** (opaque, default 30 d) stored server-side. Refresh tokens rotate on every use: each call to `/auth/refresh` invalidates the old token and returns a new pair. If a revoked token is replayed, every active session for that user is immediately revoked as a replay-attack countermeasure (RFC 6819 §5.2.1).
+
+#### Token Lifecycle (Refresh Token Flow)
+
+```
+Client                           API
+  │── POST /auth/google ────────► │  verifies Google ID token
+  │◄─ { accessToken, refreshToken } ─│  issues JWT + opaque refresh token
+  │                                │
+  │  (access token expires)        │
+  │── POST /auth/refresh ─────────► │  validates refresh token
+  │◄─ { accessToken, refreshToken } ─│  rotates: old revoked, new pair returned
+  │                                │
+  │  (user logs out)               │
+  │── POST /auth/revoke ──────────► │  revokes refresh token (single session)
+  │◄─ 204 No Content ─────────────│
+```
+
+#### 1. Exchange Google ID Token for Application Tokens
 - **Route**: `POST /auth/google`
 - **Access**: Public
 - **Request Body**:
@@ -152,6 +172,8 @@ Authorization: Bearer <accessToken>
   "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   "tokenType": "Bearer",
   "expiresIn": 3600,
+  "refreshToken": "a3f8c2e1b4d7...",
+  "refreshExpiresIn": 2592000,
   "user": {
     "id": "c3e808fb-8fa4-46c5-9b21-4f18df2b9dc3",
     "email": "user@example.com",
@@ -161,11 +183,46 @@ Authorization: Bearer <accessToken>
 ```
   - `401 Unauthorized`: Invalid or expired Google ID token.
 
+> [!TIP]
+> `expiresIn` and `refreshExpiresIn` are in seconds. Use them to schedule silent refreshes without decoding either token. Store the `refreshToken` securely (e.g. `HttpOnly` cookie or secure storage on mobile).
+
+#### 2. Rotate Refresh Token (Silent Refresh)
+- **Route**: `POST /auth/refresh`
+- **Access**: Public
+- **Description**: Exchanges a valid refresh token for a fresh access token and a new refresh token. The submitted token is immediately revoked; the client must replace it with the one returned.
+- **Request Body**:
+```json
+{
+  "refreshToken": "a3f8c2e1b4d7..."
+}
+```
+- **Responses**:
+  - `200 OK`: Same schema as `POST /auth/google`, with a new `accessToken` and a new `refreshToken`.
+  - `400 Bad Request`: Missing or blank `refreshToken` field.
+  - `401 Unauthorized`: Token not found, already revoked, or expired.
+
+> [!CAUTION]
+> Each refresh token is single-use. If the API detects a revoked token being replayed, **all sessions for that user are invalidated immediately**. The client must always store and use the latest `refreshToken` from the response.
+
+#### 3. Revoke Refresh Token (Logout)
+- **Route**: `POST /auth/revoke`
+- **Access**: Public
+- **Description**: Revokes the given refresh token, ending the current session. Unknown or already-revoked tokens are silently ignored — the response is always `204 No Content`.
+- **Request Body**:
+```json
+{
+  "refreshToken": "a3f8c2e1b4d7..."
+}
+```
+- **Responses**:
+  - `204 No Content`: Token revoked (or was already revoked / unknown — idempotent).
+  - `400 Bad Request`: Missing or blank `refreshToken` field.
+
 ---
 
 ### Feeders Management
 
-#### 2. Register a New Feeder
+#### 4. Register a New Feeder
 - **Route**: `POST /feeders`
 - **Access**: Authenticated
 - **Request Body**:
@@ -391,7 +448,7 @@ All API errors return RFC 9457 compliant `ProblemDetail` JSON representations:
 
 Standard HTTP status mappings:
 - `400 Bad Request`: Payload validation errors, invalid IANA timezone, malformed JSON.
-- `401 Unauthorized`: Missing, invalid, or expired Bearer JWT / Google token.
+- `401 Unauthorized`: Missing, invalid, or expired Bearer JWT / Google token / refresh token.
 - `404 Not Found`: Feeder, schedule, or device not found (also returned when accessing foreign resources).
 - `409 Conflict`: Device already registered, duplicate schedule parameter, or attempting to delete user with active feeders.
 
@@ -487,6 +544,7 @@ Database evolution is version-controlled via Flyway scripts located in `src/main
 - `V1__create_users_table.sql`: Creates `users` table with unique Google ID and email constraints.
 - `V2__create_feeders_table.sql`: Creates `feeders` table with unique hardware `device_id` and foreign key constraint (`ON DELETE RESTRICT`) referencing users.
 - `V3__create_feeder_configs_table.sql`: Adds `timezone` to feeders and creates `feeder_configs` table with scheduling mutual exclusivity check constraints (`INTERVAL` vs `DAILY_TIME`), interval bounds ($1 \dots 10080$), dose limits ($1 \dots 100$), and cascade deletion (`ON DELETE CASCADE`).
+- `V4__create_refresh_tokens_table.sql`: Creates `refresh_tokens` table storing opaque server-side refresh tokens. Includes a unique index on the 64-character hex token value, a foreign key to `users` with `ON DELETE CASCADE`, and a check constraint enforcing the 64-character token length.
 
 ---
 

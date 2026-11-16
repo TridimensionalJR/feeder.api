@@ -49,6 +49,8 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/auth/google")).permitAll()
+                        .requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/auth/refresh")).permitAll()
+                        .requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/auth/revoke")).permitAll()
                         .requestMatchers(PathPatternRequestMatcher.pathPattern("/error")).permitAll()
                         .requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.GET, "/devices/*/config")).permitAll()
                         .anyRequest().authenticated())

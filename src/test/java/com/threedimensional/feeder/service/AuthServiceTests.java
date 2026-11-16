@@ -2,7 +2,9 @@ package com.threedimensional.feeder.service;
 
 import com.threedimensional.feeder.config.JwtConfig;
 import com.threedimensional.feeder.exception.InvalidGoogleTokenException;
+import com.threedimensional.feeder.exception.InvalidRefreshTokenException;
 import com.threedimensional.feeder.model.User;
+import com.threedimensional.feeder.repository.RefreshTokenRepository;
 import com.threedimensional.feeder.repository.UserRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,7 +34,7 @@ import static org.mockito.Mockito.when;
  * {@code @Import}. {@link JwtConfig} supplies the encoder, the decoder and the clock.
  */
 @DataJpaTest
-@Import({AuthService.class, UserService.class, JwtService.class, JwtConfig.class})
+@Import({AuthService.class, UserService.class, JwtService.class, RefreshTokenService.class, JwtConfig.class})
 class AuthServiceTests {
 
 	private static final String ID_TOKEN = "google-id-token";
@@ -46,7 +48,13 @@ class AuthServiceTests {
 	private JwtService jwtService;
 
 	@Autowired
+	private RefreshTokenService refreshTokenService;
+
+	@Autowired
 	private UserRepository userRepository;
+
+	@Autowired
+	private RefreshTokenRepository refreshTokenRepository;
 
 	@Autowired
 	@Qualifier("appJwtDecoder")
@@ -71,6 +79,19 @@ class AuthServiceTests {
 				.isEqualTo(result.user().getId().toString());
 	}
 
+	/** Login issues and persists a refresh token alongside the access token. */
+	@Test
+	void loginWithGoogle_shouldIssueRefreshToken_whenFirstLogin() {
+		when(googleTokenVerifier.verify(ID_TOKEN)).thenReturn(new GoogleIdentity(GOOGLE_ID, EMAIL, "Tiago"));
+
+		AuthService.LoginResult result = authService.loginWithGoogle(ID_TOKEN);
+
+		assertThat(result.refreshToken()).isNotNull();
+		assertThat(result.refreshToken().getToken()).hasSize(64);
+		assertThat(result.refreshToken().isRevoked()).isFalse();
+		assertThat(refreshTokenRepository.count()).isEqualTo(1);
+	}
+
 	/**
 	 * A returning user gets a token for the account that already exists: same id, no second row.
 	 * Nothing in the result tells the two cases apart.
@@ -86,6 +107,8 @@ class AuthServiceTests {
 		assertThat(userRepository.count()).isEqualTo(1);
 		assertThat(appJwtDecoder.decode(again.accessToken().value()).getSubject())
 				.isEqualTo(first.user().getId().toString());
+		// Each login issues a new refresh token; both are stored.
+		assertThat(refreshTokenRepository.count()).isEqualTo(2);
 	}
 
 	/** An untrusted credential must not leave a trace: no account is created for it. */
@@ -97,6 +120,44 @@ class AuthServiceTests {
 				.isInstanceOf(InvalidGoogleTokenException.class);
 
 		assertThat(userRepository.count()).isZero();
+	}
+
+	// --- Refresh ------------------------------------------------------------------------------
+
+	@Test
+	void refresh_shouldReturnNewTokenPair_whenRefreshTokenIsValid() {
+		when(googleTokenVerifier.verify(ID_TOKEN)).thenReturn(new GoogleIdentity(GOOGLE_ID, EMAIL, "Tiago"));
+		AuthService.LoginResult login = authService.loginWithGoogle(ID_TOKEN);
+		String oldRefreshToken = login.refreshToken().getToken();
+
+		AuthService.LoginResult refreshed = authService.refresh(oldRefreshToken);
+
+		// New access token is for the same user.
+		assertThat(appJwtDecoder.decode(refreshed.accessToken().value()).getSubject())
+				.isEqualTo(login.user().getId().toString());
+		// New refresh token is different from the old one.
+		assertThat(refreshed.refreshToken().getToken()).isNotEqualTo(oldRefreshToken);
+		assertThat(refreshed.refreshToken().isRevoked()).isFalse();
+	}
+
+	@Test
+	void refresh_shouldThrow_whenRefreshTokenIsInvalid() {
+		assertThatThrownBy(() -> authService.refresh("0".repeat(64)))
+				.isInstanceOf(InvalidRefreshTokenException.class);
+	}
+
+	// --- Revoke -------------------------------------------------------------------------------
+
+	@Test
+	void revoke_shouldMarkRefreshTokenAsRevoked() {
+		when(googleTokenVerifier.verify(ID_TOKEN)).thenReturn(new GoogleIdentity(GOOGLE_ID, EMAIL, "Tiago"));
+		AuthService.LoginResult login = authService.loginWithGoogle(ID_TOKEN);
+		String tokenValue = login.refreshToken().getToken();
+
+		authService.revoke(tokenValue);
+
+		assertThat(refreshTokenRepository.findByToken(tokenValue))
+				.hasValueSatisfying(t -> assertThat(t.isRevoked()).isTrue());
 	}
 
 	// --- Concurrent first login ---------------------------------------------------------------
@@ -115,7 +176,7 @@ class AuthServiceTests {
 		when(racingUserService.getOrCreateByGoogle(GOOGLE_ID, EMAIL, "Tiago"))
 				.thenThrow(new DataIntegrityViolationException("uk_users_google_id"))
 				.thenReturn(winner);
-		AuthService service = new AuthService(googleTokenVerifier, racingUserService, jwtService);
+		AuthService service = new AuthService(googleTokenVerifier, racingUserService, jwtService, refreshTokenService);
 
 		AuthService.LoginResult result = service.loginWithGoogle(ID_TOKEN);
 
@@ -134,7 +195,7 @@ class AuthServiceTests {
 		when(brokenUserService.getOrCreateByGoogle(GOOGLE_ID, EMAIL, "Tiago"))
 				.thenThrow(new DataIntegrityViolationException("uk_users_email"));
 		JwtService neverCalled = mock(JwtService.class);
-		AuthService service = new AuthService(googleTokenVerifier, brokenUserService, neverCalled);
+		AuthService service = new AuthService(googleTokenVerifier, brokenUserService, neverCalled, refreshTokenService);
 
 		assertThatThrownBy(() -> service.loginWithGoogle(ID_TOKEN))
 				.isInstanceOf(DataIntegrityViolationException.class);

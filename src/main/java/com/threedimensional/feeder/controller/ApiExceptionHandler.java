@@ -7,6 +7,7 @@ import com.threedimensional.feeder.exception.FeederConfigNotFoundException;
 import com.threedimensional.feeder.exception.FeederNotFoundException;
 import com.threedimensional.feeder.exception.InvalidFeederDataException;
 import com.threedimensional.feeder.exception.InvalidGoogleTokenException;
+import com.threedimensional.feeder.exception.InvalidRefreshTokenException;
 import com.threedimensional.feeder.exception.UserHasFeedersException;
 import com.threedimensional.feeder.exception.UserNotFoundException;
 import org.slf4j.Logger;
@@ -74,6 +75,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(InvalidGoogleTokenException.class)
     public ProblemDetail handleInvalidGoogleToken(InvalidGoogleTokenException e) {
         return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "invalid Google credential");
+    }
+
+    /**
+     * Missing, expired, or revoked refresh token. The internal reason (which may mention a user id)
+     * is logged here and kept out of the response so the caller only learns that the token is bad.
+     */
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ProblemDetail handleInvalidRefreshToken(InvalidRefreshTokenException e) {
+        log.info("Invalid refresh token: {}", forLog(e.getMessage()));
+        return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "invalid refresh token");
     }
 
     /**

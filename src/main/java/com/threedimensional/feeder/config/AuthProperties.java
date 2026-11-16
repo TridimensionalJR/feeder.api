@@ -35,8 +35,16 @@ public record AuthProperties(@Valid @NotNull Google google, @Valid @NotNull Jwt 
      * The tokens this API issues once Google has vouched for the person. HS256 needs a key of at
      * least 256 bits, and counting characters is a safe floor for that: 32 characters are never
      * fewer than 32 bytes.
+     * <p>
+     * {@code refreshTokenExpiration} controls the lifetime of the opaque refresh tokens stored
+     * server-side. It is intentionally separate from the JWT expiration so each can be tuned
+     * independently (a short-lived access token + a long-lived refresh token is the typical setup).
      */
-    public record Jwt(@NotBlank @Size(min = 32) String secret, @NotBlank String issuer, @NotNull Duration expiration) {
+    public record Jwt(
+            @NotBlank @Size(min = 32) String secret,
+            @NotBlank String issuer,
+            @NotNull Duration expiration,
+            @NotNull Duration refreshTokenExpiration) {
     }
 
     /** Browser origins allowed to call this API. */

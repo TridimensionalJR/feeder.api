@@ -4,6 +4,8 @@ import com.threedimensional.feeder.config.AuthProperties;
 import com.threedimensional.feeder.config.JwtConfig;
 import com.threedimensional.feeder.config.SecurityConfig;
 import com.threedimensional.feeder.exception.InvalidGoogleTokenException;
+import com.threedimensional.feeder.exception.InvalidRefreshTokenException;
+import com.threedimensional.feeder.model.RefreshToken;
 import com.threedimensional.feeder.model.User;
 import com.threedimensional.feeder.service.AuthService;
 import com.threedimensional.feeder.service.JwtService;
@@ -27,6 +29,8 @@ import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -51,6 +55,7 @@ class AuthControllerTests {
 
 	private static final UUID USER_ID = UUID.fromString("dddddddd-dddd-dddd-dddd-dddddddddddd");
 	private static final String ALLOWED_ORIGIN = "http://localhost:5173";
+	private static final String FAKE_REFRESH_TOKEN = "a".repeat(64);
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -79,8 +84,7 @@ class AuthControllerTests {
 
 	@Test
 	void loginWithGoogle_shouldReturnTokenAndProfile_whenCredentialIsValid() throws Exception {
-		when(authService.loginWithGoogle("google-id-token")).thenReturn(
-				new AuthService.LoginResult(user(), new JwtService.AccessToken("jwt-value", Duration.ofHours(1))));
+		when(authService.loginWithGoogle("google-id-token")).thenReturn(loginResult());
 
 		mockMvc.perform(post("/auth/google")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -89,6 +93,8 @@ class AuthControllerTests {
 				.andExpect(jsonPath("$.accessToken").value("jwt-value"))
 				.andExpect(jsonPath("$.tokenType").value("Bearer"))
 				.andExpect(jsonPath("$.expiresIn").value(3600))
+				.andExpect(jsonPath("$.refreshToken").value(FAKE_REFRESH_TOKEN))
+				.andExpect(jsonPath("$.refreshExpiresIn").isNumber())
 				.andExpect(jsonPath("$.user.id").value(USER_ID.toString()))
 				.andExpect(jsonPath("$.user.email").value("tiago@example.com"))
 				.andExpect(jsonPath("$.user.name").value("Tiago"));
@@ -100,8 +106,7 @@ class AuthControllerTests {
 	 */
 	@Test
 	void loginWithGoogle_shouldNotExposeTheGoogleSubject() throws Exception {
-		when(authService.loginWithGoogle("google-id-token")).thenReturn(
-				new AuthService.LoginResult(user(), new JwtService.AccessToken("jwt-value", Duration.ofHours(1))));
+		when(authService.loginWithGoogle("google-id-token")).thenReturn(loginResult());
 
 		mockMvc.perform(post("/auth/google")
 						.contentType(MediaType.APPLICATION_JSON)
@@ -133,6 +138,75 @@ class AuthControllerTests {
 				.andExpect(status().isUnauthorized())
 				.andExpect(jsonPath("$.status").value(401))
 				.andExpect(jsonPath("$.detail").value("invalid Google credential"));
+	}
+
+	// --- Refresh ------------------------------------------------------------------------------
+
+	@Test
+	void refresh_shouldReturnNewTokenPair_whenRefreshTokenIsValid() throws Exception {
+		when(authService.refresh(FAKE_REFRESH_TOKEN)).thenReturn(loginResult());
+
+		mockMvc.perform(post("/auth/refresh")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"refreshToken\":\"" + FAKE_REFRESH_TOKEN + "\"}"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.accessToken").value("jwt-value"))
+				.andExpect(jsonPath("$.refreshToken").value(FAKE_REFRESH_TOKEN));
+	}
+
+	@Test
+	void refresh_shouldReturn401_whenRefreshTokenIsInvalid() throws Exception {
+		when(authService.refresh(FAKE_REFRESH_TOKEN))
+				.thenThrow(new InvalidRefreshTokenException("token not found"));
+
+		mockMvc.perform(post("/auth/refresh")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"refreshToken\":\"" + FAKE_REFRESH_TOKEN + "\"}"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(jsonPath("$.detail").value("invalid refresh token"));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"{}", "{\"refreshToken\":\"\"}", "{\"refreshToken\":\"   \"}", "not json"})
+	void refresh_shouldReturn400_whenBodyHasNoToken(String body) throws Exception {
+		mockMvc.perform(post("/auth/refresh")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(body))
+				.andExpect(status().isBadRequest());
+
+		verifyNoInteractions(authService);
+	}
+
+	// --- Revoke -------------------------------------------------------------------------------
+
+	@Test
+	void revoke_shouldReturn204_whenRefreshTokenIsKnown() throws Exception {
+		mockMvc.perform(post("/auth/revoke")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"refreshToken\":\"" + FAKE_REFRESH_TOKEN + "\"}"))
+				.andExpect(status().isNoContent());
+
+		verify(authService).revoke(FAKE_REFRESH_TOKEN);
+	}
+
+	/** Revoke is idempotent: even an unknown token answers 204. */
+	@Test
+	void revoke_shouldReturn204_whenRefreshTokenIsUnknown() throws Exception {
+		mockMvc.perform(post("/auth/revoke")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("{\"refreshToken\":\"" + FAKE_REFRESH_TOKEN + "\"}"))
+				.andExpect(status().isNoContent());
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {"{}", "{\"refreshToken\":\"\"}", "{\"refreshToken\":\"   \"}", "not json"})
+	void revoke_shouldReturn400_whenBodyHasNoToken(String body) throws Exception {
+		mockMvc.perform(post("/auth/revoke")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(body))
+				.andExpect(status().isBadRequest());
+
+		verifyNoInteractions(authService);
 	}
 
 	// --- Everything else is protected ---------------------------------------------------------
@@ -176,7 +250,7 @@ class AuthControllerTests {
 		AuthProperties foreign = new AuthProperties(
 				properties.google(),
 				new AuthProperties.Jwt("a-completely-different-secret-of-32-plus-chars", properties.jwt().issuer(),
-						Duration.ofHours(1)),
+						Duration.ofHours(1), properties.jwt().refreshTokenExpiration()),
 				properties.cors());
 		JwtService foreignService = new JwtService(new JwtConfig().jwtEncoder(foreign), foreign, Clock.systemUTC());
 
@@ -214,5 +288,17 @@ class AuthControllerTests {
 		User user = User.create("google-abc", "tiago@example.com", "Tiago");
 		ReflectionTestUtils.setField(user, "id", USER_ID);
 		return user;
+	}
+
+	private static RefreshToken refreshToken() {
+		User user = user();
+		RefreshToken rt = RefreshToken.create(FAKE_REFRESH_TOKEN, user, Instant.now().plus(Duration.ofDays(30)));
+		ReflectionTestUtils.setField(rt, "id", UUID.fromString("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"));
+		return rt;
+	}
+
+	private static AuthService.LoginResult loginResult() {
+		return new AuthService.LoginResult(user(), new JwtService.AccessToken("jwt-value", Duration.ofHours(1)),
+				refreshToken());
 	}
 }
