@@ -37,4 +37,10 @@ public interface FeederConfigRepository extends JpaRepository<FeederConfig, UUID
 
     /** Duplicate check counterpart for {@code uk_feeder_configs_interval}. */
     Optional<FeederConfig> findByFeederIdAndIntervalMinutes(UUID feederId, Integer intervalMinutes);
+
+    /**
+     * Scoped lookup ensuring the rule belongs to the specified feeder. Returns empty if the rule
+     * does not exist or belongs to another feeder, keeping foreign configurations unobservable.
+     */
+    Optional<FeederConfig> findByIdAndFeederId(UUID id, UUID feederId);
 }

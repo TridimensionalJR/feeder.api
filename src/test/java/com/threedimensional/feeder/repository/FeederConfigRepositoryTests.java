@@ -257,4 +257,34 @@ class FeederConfigRepositoryTests {
 				.extracting(FeederConfig::getTimeOfDay)
 				.containsExactly(null, LocalTime.of(8, 0), LocalTime.of(18, 30));
 	}
+
+	@Test
+	void findByIdAndFeederId_shouldReturnConfig_whenBelongsToFeeder() {
+		FeederConfig config = configRepository.saveAndFlush(FeederConfig.createInterval(feeder, 30, 1));
+		entityManager.clear();
+
+		assertThat(configRepository.findByIdAndFeederId(config.getId(), feeder.getId()))
+				.isPresent()
+				.get()
+				.extracting(FeederConfig::getId)
+				.isEqualTo(config.getId());
+	}
+
+	@Test
+	void findByIdAndFeederId_shouldReturnEmpty_whenBelongsToAnotherFeeder() {
+		User other = userRepository.saveAndFlush(User.create("google-other", "other@example.com", "Other"));
+		Feeder otherFeeder = feederRepository.saveAndFlush(
+				Feeder.create(UUID.fromString("55555555-5555-5555-5555-555555555555"), "Other Feeder", null, other));
+		FeederConfig config = configRepository.saveAndFlush(FeederConfig.createInterval(feeder, 30, 1));
+		entityManager.clear();
+
+		assertThat(configRepository.findByIdAndFeederId(config.getId(), otherFeeder.getId()))
+				.isEmpty();
+	}
+
+	@Test
+	void findByIdAndFeederId_shouldReturnEmpty_whenDoesNotExist() {
+		assertThat(configRepository.findByIdAndFeederId(UUID.randomUUID(), feeder.getId()))
+				.isEmpty();
+	}
 }
