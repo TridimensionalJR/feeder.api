@@ -40,7 +40,7 @@ public class SecurityConfig {
      * the API is visible right here and cannot change by adding another decoder bean.
      */
     @Bean
-    @Order(2)
+    @Order(3)
     public SecurityFilterChain apiSecurityFilterChain(HttpSecurity http,
                                                       @Qualifier("appJwtDecoder") JwtDecoder appJwtDecoder) {
         http
@@ -71,6 +71,26 @@ public class SecurityConfig {
                 .authorizeHttpRequests(requests -> requests.anyRequest().permitAll())
                 .csrf(csrf -> csrf.disable())
                 .headers(headers -> headers.frameOptions(frame -> frame.sameOrigin()));
+        return http.build();
+    }
+
+    /**
+     * Keeps Swagger UI and OpenAPI specification endpoints accessible in development.
+     * Sits in its own chain, matched ahead of the main API chain, so it stays confined
+     * to dev and never leaks into production.
+     */
+    @Bean
+    @Order(2)
+    @Profile("dev")
+    public SecurityFilterChain swaggerSecurityFilterChain(HttpSecurity http) {
+        http
+                .securityMatcher(
+                        PathPatternRequestMatcher.pathPattern("/swagger-ui/**"),
+                        PathPatternRequestMatcher.pathPattern("/swagger-ui.html"),
+                        PathPatternRequestMatcher.pathPattern("/v3/api-docs"),
+                        PathPatternRequestMatcher.pathPattern("/v3/api-docs/**"))
+                .authorizeHttpRequests(requests -> requests.anyRequest().permitAll())
+                .csrf(csrf -> csrf.disable());
         return http.build();
     }
 
