@@ -34,4 +34,10 @@ public interface FeederRepository extends JpaRepository<Feeder, UUID> {
      * The UNIQUE constraint remains the authority — this check can race.
      */
     boolean existsByDeviceId(UUID deviceId);
+
+    /**
+     * Hardware lookup: loads the feeder paired to the given physical device. Used by the hardware
+     * device polling its configuration.
+     */
+    Optional<Feeder> findByDeviceId(UUID deviceId);
 }

@@ -159,4 +159,21 @@ class FeederRepositoryTests {
 
 		assertThat(feederRepository.existsByDeviceId(OTHER_DEVICE_ID)).isTrue();
 	}
+
+	@Test
+	void findByDeviceId_shouldReturnFeeder_whenDeviceIsPaired() {
+		Feeder feeder = feederRepository.saveAndFlush(Feeder.create(DEVICE_ID, "Alimentador da sala", null, user));
+		entityManager.clear();
+
+		assertThat(feederRepository.findByDeviceId(DEVICE_ID))
+				.isPresent()
+				.get()
+				.extracting(Feeder::getId)
+				.isEqualTo(feeder.getId());
+	}
+
+	@Test
+	void findByDeviceId_shouldReturnEmpty_whenDeviceIsNotPaired() {
+		assertThat(feederRepository.findByDeviceId(UUID.randomUUID())).isEmpty();
+	}
 }
