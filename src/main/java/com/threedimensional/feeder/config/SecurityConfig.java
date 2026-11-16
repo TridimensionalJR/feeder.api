@@ -84,11 +84,7 @@ public class SecurityConfig {
     @Profile("dev")
     public SecurityFilterChain swaggerSecurityFilterChain(HttpSecurity http) {
         http
-                .securityMatcher(
-                        PathPatternRequestMatcher.pathPattern("/swagger-ui/**"),
-                        PathPatternRequestMatcher.pathPattern("/swagger-ui.html"),
-                        PathPatternRequestMatcher.pathPattern("/v3/api-docs"),
-                        PathPatternRequestMatcher.pathPattern("/v3/api-docs/**"))
+                .securityMatcher("/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs", "/v3/api-docs/**")
                 .authorizeHttpRequests(requests -> requests.anyRequest().permitAll())
                 .csrf(csrf -> csrf.disable());
         return http.build();
