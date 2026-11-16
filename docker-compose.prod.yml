@@ -1,0 +1,51 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: feeder-app-prod
+    restart: always
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=prod
+      - PORT=8080
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/${POSTGRES_DB:-feeder}
+      - SPRING_DATASOURCE_USERNAME=${POSTGRES_USER:-feeder}
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - JWT_SECRET=${JWT_SECRET}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - feeder_prod_logs:/app/logs
+    networks:
+      - feeder-prod-network
+
+  db:
+    image: postgres:17-alpine
+    container_name: feeder-postgres-prod
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-feeder}
+      POSTGRES_USER: ${POSTGRES_USER:-feeder}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_prod_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-feeder} -d ${POSTGRES_DB:-feeder}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - feeder-prod-network
+
+volumes:
+  postgres_prod_data:
+  feeder_prod_logs:
+
+networks:
+  feeder-prod-network:
+    driver: bridge

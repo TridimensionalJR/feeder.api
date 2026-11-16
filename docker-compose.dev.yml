@@ -1,0 +1,44 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: feeder-app-dev
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8080}:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=dev
+      - SERVER_PORT=8080
+    volumes:
+      - ./logs:/app/logs
+    networks:
+      - feeder-dev-network
+
+  # Optional local PostgreSQL service for development & testing Flyway migrations
+  postgres:
+    image: postgres:17-alpine
+    container_name: feeder-postgres-dev
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-feederdb}
+      POSTGRES_USER: ${POSTGRES_USER:-feeder}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-feeder123}
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-feeder} -d ${POSTGRES_DB:-feederdb}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - feeder-dev-network
+
+volumes:
+  postgres_dev_data:
+
+networks:
+  feeder-dev-network:
+    driver: bridge
