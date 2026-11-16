@@ -5,6 +5,7 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.threedimensional.feeder.exception.DeviceAlreadyRegisteredException;
+import com.threedimensional.feeder.exception.DeviceNotPairedException;
 import com.threedimensional.feeder.exception.DuplicateFeederConfigException;
 import com.threedimensional.feeder.exception.FeederConfigNotFoundException;
 import com.threedimensional.feeder.exception.FeederNotFoundException;
@@ -113,6 +114,14 @@ class ApiExceptionHandlerTests {
 				.andExpect(content().string(not(containsString("uk_feeder_configs"))));
 	}
 
+	@Test
+	void deviceNotPaired_shouldReturn404_andNotEchoTheDeviceId() throws Exception {
+		mockMvc.perform(get("/test/devices/not-paired"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.detail").value("device not paired"))
+				.andExpect(content().string(not(containsString(ApiExceptionHandlerStubController.DEVICE_ID.toString()))));
+	}
+
 	/**
 	 * The caller learns the device is taken, not whose account holds it, and not the unique
 	 * constraint that lost the race either: the body is the fixed sentence from DESIGN §8, so a
@@ -165,8 +174,19 @@ class ApiExceptionHandlerTests {
 				.contains(ApiExceptionHandlerStubController.DEVICE_ID.toString());
 		assertThat(new FeederConfigNotFoundException(ApiExceptionHandlerStubController.CONFIG_ID).getMessage())
 				.contains(ApiExceptionHandlerStubController.CONFIG_ID.toString());
+		assertThat(new DeviceNotPairedException(ApiExceptionHandlerStubController.DEVICE_ID).getMessage())
+				.contains(ApiExceptionHandlerStubController.DEVICE_ID.toString());
 		assertThat(DuplicateFeederConfigException.forInterval(ApiExceptionHandlerStubController.FEEDER_ID, 30).getMessage())
 				.contains(ApiExceptionHandlerStubController.FEEDER_ID.toString());
+	}
+
+	@Test
+	void deviceNotPaired_shouldLogOneInfoLine_whenMapped() throws Exception {
+		mockMvc.perform(get("/test/devices/not-paired"))
+				.andExpect(status().isNotFound());
+
+		assertSingleInfoLine("Device not paired: device " + ApiExceptionHandlerStubController.DEVICE_ID
+				+ " is not paired to any feeder");
 	}
 
 	@Test

@@ -1,6 +1,7 @@
 package com.threedimensional.feeder.controller;
 
 import com.threedimensional.feeder.exception.DeviceAlreadyRegisteredException;
+import com.threedimensional.feeder.exception.DeviceNotPairedException;
 import com.threedimensional.feeder.exception.DuplicateFeederConfigException;
 import com.threedimensional.feeder.exception.FeederConfigNotFoundException;
 import com.threedimensional.feeder.exception.FeederNotFoundException;
@@ -117,5 +118,10 @@ class ApiExceptionHandlerStubController {
 	@GetMapping("/test/configs/conflict")
 	void conflictingConfig() {
 		throw DuplicateFeederConfigException.forInterval(FEEDER_ID, 30);
+	}
+
+	@GetMapping("/test/devices/not-paired")
+	void unpairedDevice() {
+		throw new DeviceNotPairedException(DEVICE_ID);
 	}
 }

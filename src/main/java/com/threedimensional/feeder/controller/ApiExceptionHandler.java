@@ -1,6 +1,7 @@
 package com.threedimensional.feeder.controller;
 
 import com.threedimensional.feeder.exception.DeviceAlreadyRegisteredException;
+import com.threedimensional.feeder.exception.DeviceNotPairedException;
 import com.threedimensional.feeder.exception.DuplicateFeederConfigException;
 import com.threedimensional.feeder.exception.FeederConfigNotFoundException;
 import com.threedimensional.feeder.exception.FeederNotFoundException;
@@ -150,5 +151,15 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     public ProblemDetail handleDuplicateFeederConfig(DuplicateFeederConfigException e) {
         log.info("Duplicate feeder config: {}", forLog(e.getMessage()));
         return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "feeder config already exists");
+    }
+
+    /**
+     * The hardware device querying configuration is not registered or paired to any feeder account.
+     * The device id in the message is logged and not echoed back.
+     */
+    @ExceptionHandler(DeviceNotPairedException.class)
+    public ProblemDetail handleDeviceNotPaired(DeviceNotPairedException e) {
+        log.info("Device not paired: {}", forLog(e.getMessage()));
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "device not paired");
     }
 }
