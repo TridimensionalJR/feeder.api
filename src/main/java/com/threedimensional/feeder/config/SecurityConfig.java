@@ -50,6 +50,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(requests -> requests
                         .requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.POST, "/auth/google")).permitAll()
                         .requestMatchers(PathPatternRequestMatcher.pathPattern("/error")).permitAll()
+                        .requestMatchers(PathPatternRequestMatcher.pathPattern(HttpMethod.GET, "/devices/*/config")).permitAll()
                         .anyRequest().authenticated())
                 .oauth2ResourceServer(resourceServer -> resourceServer.jwt(jwt -> jwt.decoder(appJwtDecoder)));
         return http.build();
