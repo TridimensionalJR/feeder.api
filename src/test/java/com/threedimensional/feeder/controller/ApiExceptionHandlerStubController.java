@@ -1,6 +1,8 @@
 package com.threedimensional.feeder.controller;
 
 import com.threedimensional.feeder.exception.DeviceAlreadyRegisteredException;
+import com.threedimensional.feeder.exception.DuplicateFeederConfigException;
+import com.threedimensional.feeder.exception.FeederConfigNotFoundException;
 import com.threedimensional.feeder.exception.FeederNotFoundException;
 import com.threedimensional.feeder.exception.InvalidFeederDataException;
 import com.threedimensional.feeder.exception.InvalidGoogleTokenException;
@@ -28,6 +30,7 @@ class ApiExceptionHandlerStubController {
 	static final UUID FEEDER_ID = UUID.fromString("11111111-1111-1111-1111-111111111111");
 	static final UUID DEVICE_ID = UUID.fromString("22222222-2222-2222-2222-222222222222");
 	static final UUID USER_ID = UUID.fromString("33333333-3333-3333-3333-333333333333");
+	static final UUID CONFIG_ID = UUID.fromString("44444444-4444-4444-4444-444444444444");
 	static final String INVALID_TIMEZONE = "Mars/Olympus";
 	/** CR/LF plus the separators {@code \p{Cc}} (C1 NEL) and {@code \p{Zl}}/{@code \p{Zp}} must also cover. */
 	static final String FORGED_MESSAGE = "Unknown time-zone ID: Mars/Olympus\r\nERROR\u0085forged\u2028line\u2029entry";
@@ -104,5 +107,15 @@ class ApiExceptionHandlerStubController {
 	@GetMapping("/test/illegal-argument")
 	void unmappedIllegalArgument() {
 		throw new IllegalArgumentException("Id must not be null");
+	}
+
+	@GetMapping("/test/configs/missing")
+	void missingConfig() {
+		throw new FeederConfigNotFoundException(CONFIG_ID);
+	}
+
+	@GetMapping("/test/configs/conflict")
+	void conflictingConfig() {
+		throw DuplicateFeederConfigException.forInterval(FEEDER_ID, 30);
 	}
 }

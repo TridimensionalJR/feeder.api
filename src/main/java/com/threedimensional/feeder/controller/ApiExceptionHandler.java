@@ -1,6 +1,8 @@
 package com.threedimensional.feeder.controller;
 
 import com.threedimensional.feeder.exception.DeviceAlreadyRegisteredException;
+import com.threedimensional.feeder.exception.DuplicateFeederConfigException;
+import com.threedimensional.feeder.exception.FeederConfigNotFoundException;
 import com.threedimensional.feeder.exception.FeederNotFoundException;
 import com.threedimensional.feeder.exception.InvalidFeederDataException;
 import com.threedimensional.feeder.exception.InvalidGoogleTokenException;
@@ -127,5 +129,26 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     public ProblemDetail handleInvalidFeederData(InvalidFeederDataException e) {
         log.info("Invalid feeder data: {}", forLog(e.getMessage()));
         return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, "invalid request content");
+    }
+
+    /**
+     * A feeder configuration of another feeder or account answers exactly like one that never
+     * existed: same status, same fixed detail. The id carried by the exception message is logged
+     * by this handler and never returned.
+     */
+    @ExceptionHandler(FeederConfigNotFoundException.class)
+    public ProblemDetail handleFeederConfigNotFound(FeederConfigNotFoundException e) {
+        log.info("Feeder config not found: {}", forLog(e.getMessage()));
+        return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, "feeder config not found");
+    }
+
+    /**
+     * One 409 for both the pre-check and the unique constraints losing the race when scheduling
+     * rules collide on the same feeder. The details in the message are logged, not echoed back.
+     */
+    @ExceptionHandler(DuplicateFeederConfigException.class)
+    public ProblemDetail handleDuplicateFeederConfig(DuplicateFeederConfigException e) {
+        log.info("Duplicate feeder config: {}", forLog(e.getMessage()));
+        return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, "feeder config already exists");
     }
 }

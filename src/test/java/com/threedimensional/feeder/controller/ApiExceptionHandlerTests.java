@@ -5,6 +5,8 @@ import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.threedimensional.feeder.exception.DeviceAlreadyRegisteredException;
+import com.threedimensional.feeder.exception.DuplicateFeederConfigException;
+import com.threedimensional.feeder.exception.FeederConfigNotFoundException;
 import com.threedimensional.feeder.exception.FeederNotFoundException;
 import jakarta.servlet.ServletException;
 import org.junit.jupiter.api.AfterEach;
@@ -95,6 +97,22 @@ class ApiExceptionHandlerTests {
 				.andExpect(content().string(not(containsString(ApiExceptionHandlerStubController.FEEDER_ID.toString()))));
 	}
 
+	@Test
+	void feederConfigNotFound_shouldReturn404_andNotEchoTheId() throws Exception {
+		mockMvc.perform(get("/test/configs/missing"))
+				.andExpect(status().isNotFound())
+				.andExpect(jsonPath("$.detail").value("feeder config not found"))
+				.andExpect(content().string(not(containsString(ApiExceptionHandlerStubController.CONFIG_ID.toString()))));
+	}
+
+	@Test
+	void duplicateFeederConfig_shouldReturn409_andNotEchoInternalDetails() throws Exception {
+		mockMvc.perform(get("/test/configs/conflict"))
+				.andExpect(status().isConflict())
+				.andExpect(jsonPath("$.detail").value("feeder config already exists"))
+				.andExpect(content().string(not(containsString("uk_feeder_configs"))));
+	}
+
 	/**
 	 * The caller learns the device is taken, not whose account holds it, and not the unique
 	 * constraint that lost the race either: the body is the fixed sentence from DESIGN §8, so a
@@ -145,6 +163,27 @@ class ApiExceptionHandlerTests {
 				.contains(ApiExceptionHandlerStubController.FEEDER_ID.toString());
 		assertThat(new DeviceAlreadyRegisteredException(ApiExceptionHandlerStubController.DEVICE_ID).getMessage())
 				.contains(ApiExceptionHandlerStubController.DEVICE_ID.toString());
+		assertThat(new FeederConfigNotFoundException(ApiExceptionHandlerStubController.CONFIG_ID).getMessage())
+				.contains(ApiExceptionHandlerStubController.CONFIG_ID.toString());
+		assertThat(DuplicateFeederConfigException.forInterval(ApiExceptionHandlerStubController.FEEDER_ID, 30).getMessage())
+				.contains(ApiExceptionHandlerStubController.FEEDER_ID.toString());
+	}
+
+	@Test
+	void feederConfigNotFound_shouldLogOneInfoLine_whenMapped() throws Exception {
+		mockMvc.perform(get("/test/configs/missing"))
+				.andExpect(status().isNotFound());
+
+		assertSingleInfoLine("Feeder config not found: feeder config " + ApiExceptionHandlerStubController.CONFIG_ID + " does not exist");
+	}
+
+	@Test
+	void duplicateFeederConfig_shouldLogOneInfoLine_whenMapped() throws Exception {
+		mockMvc.perform(get("/test/configs/conflict"))
+				.andExpect(status().isConflict());
+
+		assertSingleInfoLine("Duplicate feeder config: feeder " + ApiExceptionHandlerStubController.FEEDER_ID
+				+ " already has a schedule for interval 30 minutes");
 	}
 
 	/**
